@@ -17,22 +17,33 @@
 | `deepseek-v4.1-flash` | Go off-peak $0.15 / $0.60 | ✅ 暗绿 | ✅ 便宜 |
 | `kimi-k3` | $3.00 / $15.00 | ✅ 红色 | ✅ 贵 |
 
-## 2. 目标
+## 2. 范围（Scope）
+
+**v1 只覆盖 opencode 的模型：**
+
+- `opencode-go` —— OpenCode Go 计划，价格取 `reference/opencode-go-pricing.md`。
+- `opencode` —— OpenCode Zen，价格取 `reference/opencode-zen-pricing.md`。
+
+两者同一模型价格不同（见 §5），必须按 provider 分开查表。
+
+其它 provider（`kimi-coding`、`anthropic`、`openai` …）**不在 v1 范围**：用 `ctx.model.cost` 兜底，拿不到价格就中性显示，不判色、不误报。
+
+## 3. 目标
 
 在 pi 的 footer 里，把当前模型按**真实价格**染成一条**连续色阶**：价格越高颜色越深/越暖（越像警告），价格越低越浅/越冷（越不像警告），免费落在最浅端。
 
 关键点：不是"高亮"，也不是"分几档打标"，而是**颜色随价格单调变化**——同一档内更贵的也不许比更便宜的颜色浅。
 
-## 3. 硬性要求
+## 4. 硬性要求
 
 1. **只按价格分级，禁止按模型名或厂牌判断。** 名字只用于展示。
 2. **免费（$0）必须是"放心"色**，绝不能是红。
 3. 价格来源必须可追溯：opencode-go / opencode zen 官方文档报价表，快照存进 `reference/`，带出处 URL 与抓取日期。
-4. pi 目录里的 `ctx.model.cost` 只能当**兜底**，不能当唯一真相（已知与官网不一致、不完整，见 §4）。
-5. 非 opencode-go 的 provider（`kimi-coding`、`anthropic` 等）也要有合理行为：**没有价格数据时给中性提示，不许乱判红/绿**。
+4. pi 目录里的 `ctx.model.cost` 只能当**兜底**，不能当唯一真相（已知与官网不一致、不完整，见 §5）。
+5. **范围只限 opencode**：`opencode-go` / `opencode` 查本地价格表；其它 provider 用 `ctx.model.cost` 兜底，拿不到价格就中性显示，**不许乱判红/绿**。
 6. **颜色随价格单调**：价格更高时，颜色不许比价格更低的更浅/更冷。
 
-## 4. 已知数据问题
+## 5. 已知数据问题
 
 pi 的 `~/.pi/agent/models-store.json`（provider `opencode-go`，2026-10-09 抓取）与官网 Go 报价表大体一致，但有偏差：
 
@@ -43,7 +54,7 @@ pi 的 `~/.pi/agent/models-store.json`（provider `opencode-go`，2026-10-09 抓
 
 结论：**自建一份按 `provider + model id` 的价格表**（从 `reference/` 生成），`ctx.model.cost` 兜底。
 
-## 5. 订阅制的特殊性（opencode-go）
+## 6. 订阅制的特殊性（opencode-go）
 
 opencode-go 不是纯按量付费，而是订阅：
 
@@ -58,7 +69,7 @@ opencode-go 不是纯按量付费，而是订阅：
 
 建议：以单价为主分级，额度作为附加信息（可选展示）。
 
-## 6. 着色规则：价格 → 连续色阶
+## 7. 着色规则：价格 → 连续色阶
 
 核心不是"分几档"，而是**单调映射**：
 
@@ -72,7 +83,7 @@ opencode-go 不是纯按量付费，而是订阅：
    - `input + output`；或
    - 以输出为主（输出通常更贵）：`input + 3 * output`；或
    - `max(input, output)`。
-   待定（见 §9）。
+   待定（见 §10）。
 2. 用**对数刻度**把 `price` 映到 0..1 的 severity（价格跨好几个数量级，线性会把便宜的全挤在一起）：
 
    ```
@@ -95,7 +106,7 @@ opencode-go 不是纯按量付费，而是订阅：
 
 > 旧的"Free / 便宜 / 中档 / 贵"四档表已废弃：那是离散分档，不符合"越贵越深"的连续色阶要求。
 
-## 7. pi 扩展 API 约束（已实测）
+## 8. pi 扩展 API 约束（已实测）
 
 - **无法单独给 footer 里那个模型名换色**。只有两条路：
   - `ctx.ui.setStatus(key, text)` —— 在 footer 下加一行状态（本扩展采用）；
@@ -105,7 +116,7 @@ opencode-go 不是纯按量付费，而是订阅：
 - 仅在 `ctx.hasUI` 为真时调用（JSON/print 模式无 UI）。
 - 扩展放 `~/.pi/agent/extensions/`，由 dotfiles（chezmoi）管理；重开 pi 或 `/reload` 生效。
 
-## 8. 验收标准
+## 9. 验收标准
 
 - 任何 Free 模型（如 `longcat-2.5-preview-free`）→ 放心色，**不是红**。
 - `kimi-k3`（$3.00/$15.00）→ 红。
@@ -113,7 +124,7 @@ opencode-go 不是纯按量付费，而是订阅：
 - 无价格数据的模型 → 中性，不误判。
 - 切换模型立即更新；启动/恢复会话时显示正确。
 
-## 9. 开放问题
+## 10. 开放问题
 
 - 价格标量 `price` 怎么算（`input+output` / `input+3*output` / `max`）？
 - 对数刻度的 `lo` / `hi` 取多少？
@@ -122,4 +133,4 @@ opencode-go 不是纯按量付费，而是订阅：
 - 价格表是硬编码进扩展，还是构建时从 `reference/` 生成一个 JSON 一起提交？
 - 要不要顺带显示"本会话已花 / 月度额度剩余"？
 - 要不要提供 `/price-heat` 命令切换模式或临时静音？
-- 是否只在 `opencode-go` 生效，其它 provider 一律走 `ctx.model.cost`？
+- 非 opencode provider 的兜底怎么处理：也用 `ctx.model.cost` 上色阶，还是干脆不显示？
