@@ -35,12 +35,18 @@ LongCat 2.5 Preview Free free  ← dim 绿，放心
 
 ## 安装
 
-扩展入口是本仓根的 `index.ts`，由 dotfiles（chezmoi）以 git-repo external 链到 `~/.pi/agent/extensions/pi-price-heat/`。重开 pi 或 `/reload` 生效。
-
-临时试用（不进 dotfiles）：
+作为一个 pi 包安装（git source）：
 
 ```bash
-pi -e /path/to/pi-price-heat
+pi install git:github.com/zhaochunqi/pi-price-heat
+```
+
+写入 `~/.pi/agent/settings.json` 的 `packages`；重开 pi 或 `/reload` 生效。升级：`pi update`。
+
+临时试用（不写 settings）：
+
+```bash
+pi -e git:github.com/zhaochunqi/pi-price-heat
 ```
 
 ## 开发

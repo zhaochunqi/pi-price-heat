@@ -129,7 +129,7 @@ hi = 20.00    # “明显贵”的锚点，≈ Kimi K3（3+15=18）
 - `setStatus` 的文本会经过 sanitize（去掉 `\r\n\t` 并折叠空格），但 **ANSI 转义保留**，所以可以用颜色；pi-tui 的 `visibleWidth` 能正确计算含 ANSI 的宽度。
 - 仅在 `ctx.hasUI` 为真时调用（JSON/print 模式无 UI）。
 - 未启动会话的调用（如 `--list-models`）不会加载扩展，验证要用真实会话。
-- 扩展在本仓根目录（入口 `index.ts` + `pricing.ts`），由 dotfiles（chezmoi）以 git-repo external 链到 `~/.pi/agent/extensions/pi-price-heat/`；重开 pi 或 `/reload` 生效。
+- 扩展在本仓根（入口 `index.ts` + `pricing.ts`），通过 `pi install git:github.com/zhaochunqi/pi-price-heat` 安装为 pi 包（`package.json` 的 `pi.extensions` 指向入口）；重开 pi 或 `/reload` 生效。
 
 ## 8. 验收标准
 
