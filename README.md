@@ -6,27 +6,51 @@ pi 扩展：footer 里的**当前模型**按**真实价格**染成一条色阶�
 
 范围：**v1 只覆盖 opencode 的模型**（`opencode-go` / `opencode`）；其它 provider 走 `ctx.model.cost` 兜底。
 
-状态：**需求整理阶段**，尚未实现。
+## 效果
 
-## 要解决的问题
+footer 下多一行状态（`setStatus`）：
 
-pi 的 footer 右侧会把当前模型名用 dim 灰色显示，切换模型时（`/model`、Ctrl+P 循环、恢复会话）很容易没注意到。使用者为此误用了好几次比 DeepSeek 贵的模型。
+```
+Kimi K3 $3/$15                 ← 白字红底，一眼看到"贵"
+MiMo-V2.6-Flash $0.14/$0.28    ← 浅绿
+LongCat 2.5 Preview Free free  ← dim 绿，放心
+```
 
-## 关键教训（第一版为什么被否）
+- 色阶：`severity = clamp((log10(input+output) - log10(0.30)) / (log10(20) - log10(0.30)), 0, 1)`
+- 颜色：浅绿 `#8ce99a` → 黄 `#ffd43b` → 红 `#ff5555`；≥0.7 加粗，≥0.9 反白。
+- 免费（0/0）恒为 `severity = 0`，**永不判红**。
+- 无价格 → 中性灰，不判色。
 
-第一版用模型名正则判断"便宜"（命中 `/deepseek/i` 就算便宜，其余一律红色）。这在根上就是错的：
+细节与锚点见 [`docs/requirements.md`](docs/requirements.md)。
 
-- 免费模型也会被判红。例如 opencode-go 的 `longcat-2.5-preview-free`（官方报价 **Free**）被标成红色警告。
-- 同名不同价：`mimo-v2.6-flash`（$0.14/$0.28）与 `mimo-v2.6-flash-free`（Free）靠名字区分不可靠。
+## 价格来源
 
-所以：**分级只看价格，名字只用于展示。**
+**models.dev**，运行时动态获取（`https://models.dev/api.json`），只切 `opencode-go` / `opencode` 两个 provider：
 
-## 名字
+- 落盘缓存 `$XDG_CACHE_HOME/pi-price-heat/models-dev.json`（macOS 无 XDG 时 `~/Library/Caches/...`），12h 内直接用；过期后用 `If-None-Match` 条件刷新。
+- 离线/站点故障用旧缓存；完全没有则回退 `ctx.model.cost`，再没有就中性灰。
+- 不硬编码价格。实时核对：`node scripts/preview.ts`。
 
-`pi-price-heat`：price + heat，指"价格热度色阶"。曾用名 `pi-model-highlight`（不准确：重点不是 highlight 某个模型，而是按价格给出深浅）。
+> models.dev 每个模型只给一档价。Go 的 DeepSeek V4.1 Flash 因此是 off-peak `$0.15/$0.60`（severity ≈0.22），Zen 是 peak `$0.30/$1.20`（≈0.38）。
 
-## 文档
+## 安装
 
-- [`docs/requirements.md`](docs/requirements.md) — 需求、数据来源、验收标准、开放问题
-- [`reference/`](reference/) — opencode-go / opencode zen 官方报价快照（自动生成，含出处与抓取日期）
-  - 刷新：`python3 scripts/fetch-opencode-pricing.py`
+扩展入口是本仓根的 `index.ts`，由 dotfiles（chezmoi）以 git-repo external 链到 `~/.pi/agent/extensions/pi-price-heat/`。重开 pi 或 `/reload` 生效。
+
+临时试用（不进 dotfiles）：
+
+```bash
+pi -e /path/to/pi-price-heat
+```
+
+## 开发
+
+```bash
+node --test pricing.test.ts     # 纯逻辑单测（severity / 色阶 / 单调性 / 解析）
+node scripts/preview.ts         # 拉 models.dev，列出所有 opencode 模型的价格与 severity
+```
+
+- `index.ts` —— pi 扩展胶水：动态取价、缓存、`setStatus`。
+- `pricing.ts` —— 纯函数：价格 → severity → ANSI 颜色（无 pi、无 I/O，可直接单测）。
+- `pricing.test.ts` —— 单测。
+- `scripts/preview.ts` —— 实时预览。
