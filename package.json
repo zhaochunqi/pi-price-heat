@@ -2,8 +2,16 @@
   "name": "pi-price-heat",
   "version": "0.1.0",
   "description": "pi extension: colour the footer model by its real price from models.dev",
-  "keywords": ["pi-package"],
+  "keywords": ["pi-package", "pi", "extension", "models", "pricing"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhaochunqi/pi-price-heat.git"
+  },
+  "homepage": "https://github.com/zhaochunqi/pi-price-heat#readme",
+  "bugs": {
+    "url": "https://github.com/zhaochunqi/pi-price-heat/issues"
+  },
   "type": "module",
   "pi": {
     "extensions": ["./index.ts"]

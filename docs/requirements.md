@@ -1,5 +1,7 @@
 # 需求：pi-price-heat
 
+> 面向使用者的说明见 [README](../README.md)（英文）/ [README.zh-CN](../README.zh-CN.md)（中文）；本文是实现需求与设计取舍，保留原始中文。
+
 ## 1. 目标
 
 pi 的 footer 右侧把当前模型名显示为 **dim 灰色**，`/model`、Ctrl+P 循环、恢复会话时都容易漏看，进而误用偏贵的模型。

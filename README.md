@@ -1,62 +1,66 @@
 # pi-price-heat
 
-pi 扩展：footer 里的**当前模型**按**真实价格**染成一条色阶——越贵越深、越便宜越浅，免费最浅。
+A [pi](https://pi.dev) extension that colours the **current model** in the footer by its **real price** — the more expensive the model, the hotter the colour. Free models stay the palest.
 
-不是"高亮某个模型"，而是"价格 → 颜色深浅"的单调映射：不按模型名猜，只按价格算。
+This is not "highlight one model": it is a monotonic **price → colour intensity** mapping. It never guesses from the model name or vendor, only from the price.
 
-范围：**v1 只覆盖 opencode 的模型**（`opencode-go` / `opencode`）；其它 provider 走 `ctx.model.cost` 兜底。
+[中文说明](README.zh-CN.md) · [Design notes](docs/requirements.md)
 
-## 效果
+## What it looks like
 
-footer 下多一行状态（`setStatus`）：
+The extension adds a status line below the footer (`setStatus`):
 
 ```
-Kimi K3 $3/$15                 ← 白字红底，一眼看到"贵"
-MiMo-V2.6-Flash $0.14/$0.28    ← 浅绿
-LongCat 2.5 Preview Free free  ← dim 绿，放心
+Kimi K3 $3/$15                 ← white on red: expensive at a glance
+MiMo-V2.6-Flash $0.14/$0.28    ← pale green
+LongCat 2.5 Preview Free free  ← dim green, safe to use
 ```
 
-- 色阶：`severity = clamp((log10(input+output) - log10(0.30)) / (log10(20) - log10(0.30)), 0, 1)`
-- 颜色：浅绿 `#8ce99a` → 黄 `#ffd43b` → 红 `#ff5555`；≥0.7 加粗，≥0.9 反白。
-- 免费（0/0）恒为 `severity = 0`，**永不判红**。
-- 无价格 → 中性灰，不判色。
+- Ramp: `severity = clamp((log10(input + output) - log10(0.30)) / (log10(20) - log10(0.30)), 0, 1)`
+- Colour: pale green `#8ce99a` → yellow `#ffd43b` → red `#ff5555`; `≥ 0.7` is bold, `≥ 0.9` is bold with reversed colours.
+- Free (`0/0`) is always `severity = 0` and is **never** red.
+- No price data → neutral grey, never judged.
 
-细节与锚点见 [`docs/requirements.md`](docs/requirements.md)。
+Scope: **v1 covers opencode models only** (`opencode-go` / `opencode`); other providers fall back to `ctx.model.cost`.
 
-## 价格来源
+## Where prices come from
 
-**models.dev**，运行时动态获取（`https://models.dev/api.json`），只切 `opencode-go` / `opencode` 两个 provider：
+[models.dev](https://models.dev) — fetched at runtime from `https://models.dev/api.json`, sliced down to the `opencode-go` / `opencode` providers:
 
-- 落盘缓存 `$XDG_CACHE_HOME/pi-price-heat/models-dev.json`（macOS 无 XDG 时 `~/Library/Caches/...`），12h 内直接用；过期后用 `If-None-Match` 条件刷新。
-- 离线/站点故障用旧缓存；完全没有则回退 `ctx.model.cost`，再没有就中性灰。
-- 不硬编码价格。实时核对：`node scripts/preview.ts`。
+- Cached on disk at `$XDG_CACHE_HOME/pi-price-heat/models-dev.json` (`~/Library/Caches/...` on macOS without XDG); reused for 12h, then revalidated with `If-None-Match`.
+- Offline or upstream down → keep using the stale cache; with no cache at all it falls back to `ctx.model.cost`, and finally to neutral grey.
+- Prices are never hard-coded. Check them live with `node scripts/preview.ts`.
 
-> models.dev 每个模型只给一档价。Go 的 DeepSeek V4.1 Flash 因此是 off-peak `$0.15/$0.60`（severity ≈0.22），Zen 是 peak `$0.30/$1.20`（≈0.38）。
+> models.dev gives one price tier per model, so DeepSeek V4.1 Flash shows off-peak `$0.15/$0.60` on Go (severity ≈ 0.22) and peak `$0.30/$1.20` on Zen (≈ 0.38).
 
-## 安装
+## Install
 
-作为一个 pi 包安装（git source）：
+Install as a pi package (git source):
 
 ```bash
 pi install git:github.com/zhaochunqi/pi-price-heat
 ```
 
-写入 `~/.pi/agent/settings.json` 的 `packages`；重开 pi 或 `/reload` 生效。升级：`pi update`。
+This writes a `packages` entry to `~/.pi/agent/settings.json`. Restart pi or run `/reload` to pick it up. Update later with `pi update`.
 
-临时试用（不写 settings）：
+Try it for a single session without touching settings:
 
 ```bash
 pi -e git:github.com/zhaochunqi/pi-price-heat
 ```
 
-## 开发
+## Development
 
 ```bash
-node --test pricing.test.ts     # 纯逻辑单测（severity / 色阶 / 单调性 / 解析）
-node scripts/preview.ts         # 拉 models.dev，列出所有 opencode 模型的价格与 severity
+node --test pricing.test.ts     # pure logic: severity / ramp / monotonicity / parsing
+node scripts/preview.ts         # fetch models.dev and list every opencode model with price + severity
 ```
 
-- `index.ts` —— pi 扩展胶水：动态取价、缓存、`setStatus`。
-- `pricing.ts` —— 纯函数：价格 → severity → ANSI 颜色（无 pi、无 I/O，可直接单测）。
-- `pricing.test.ts` —— 单测。
-- `scripts/preview.ts` —— 实时预览。
+- `index.ts` — the pi extension glue: live price fetch, cache, `setStatus`.
+- `pricing.ts` — pure functions: price → severity → ANSI colour (no pi, no I/O, directly unit-testable).
+- `pricing.test.ts` — unit tests.
+- `scripts/preview.ts` — live preview.
+
+## License
+
+[MIT](LICENSE)
