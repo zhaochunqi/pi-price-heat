@@ -105,6 +105,25 @@ export function statusText(name: string, entry: PriceEntry | undefined): string 
 }
 
 /**
+ * Price threshold for the above-editor banner: the same point where the ramp
+ * turns bold (docs/requirements.md §6.3). Below it the footer status line is
+ * enough; at or above it the model is worth an unmissable reminder.
+ */
+export const ALERT_SEVERITY = 0.7;
+
+/**
+ * The above-editor banner line, shown only for models expensive enough to warn
+ * about. Cheap, free and unknown-priced models return undefined: the banner
+ * must stay quiet so it never turns into decoration you learn to ignore.
+ */
+export function alertText(name: string, entry: PriceEntry | undefined): string | undefined {
+	if (!entry) return undefined;
+	const severity = severityOf(priceOf(entry));
+	if (severity < ALERT_SEVERITY) return undefined;
+	return paint(`⚠ ${name}  ${formatPriceLabel(entry)}`, severity);
+}
+
+/**
  * Slice a models.dev `api.json` payload down to the tracked providers.
  * Only providers present with a numeric `cost.input`/`cost.output` are kept.
  */

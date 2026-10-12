@@ -3,7 +3,9 @@
  *
  * The footer model name is dim grey in pi, which makes it easy to miss when
  * cycling models. This extension adds a status line that paints the model name
- * on a green -> yellow -> red heat ramp derived only from the token price.
+ * on a green -> yellow -> red heat ramp derived only from the token price, and
+ * raises a banner above the editor whenever the current model is expensive
+ * enough to be worth a second look.
  *
  * Prices are fetched dynamically from models.dev (https://models.dev), sliced
  * down to the tracked opencode providers, cached on disk and refreshed in the
@@ -18,6 +20,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
+	alertText,
 	extractProviderPrices,
 	type PriceEntry,
 	type PriceTable,
@@ -126,11 +129,16 @@ export default function priceHeat(pi: ExtensionAPI): void {
 		const model = ctx.model;
 		if (!model) {
 			ctx.ui.setStatus(STATUS_KEY, undefined);
+			ctx.ui.setWidget(STATUS_KEY, undefined);
 			return;
 		}
 		const entry = resolve(model, table);
 		const name = entry?.name ?? model.name ?? model.id ?? "model";
 		ctx.ui.setStatus(STATUS_KEY, statusText(name, entry));
+		// The footer is easy to miss; an expensive model gets a banner right above
+		// the editor. Cheap/free/unknown models clear it so it stays meaningful.
+		const alert = alertText(name, entry);
+		ctx.ui.setWidget(STATUS_KEY, alert ? [alert] : undefined);
 	}
 
 	function refresh(): void {

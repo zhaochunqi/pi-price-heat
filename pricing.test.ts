@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	alertText,
 	colorOf,
 	extractProviderPrices,
 	formatPriceLabel,
@@ -66,6 +67,22 @@ test("status text keeps the name and a dim price tag", () => {
 	const unknown = statusText("mystery", undefined);
 	assert.ok(unknown.includes("mystery"));
 	assert.ok(unknown.includes("\x1b[2m"));
+});
+
+test("alert banner flags only genuinely expensive models", () => {
+	const kimi = alertText("Kimi K3", { input: 3, output: 15 });
+	assert.ok(kimi?.includes("Kimi K3"));
+	assert.ok(kimi?.includes("$3/$15"));
+	assert.ok(kimi?.includes("48;2;"), ">=0.9 should reverse-video the banner");
+
+	const glm = alertText("GLM 5.3", { input: 1.4, output: 4.4 });
+	assert.ok(glm?.includes("\x1b[1m"), "0.71 should at least be bold");
+});
+
+test("alert banner stays quiet for cheap, free and unknown prices", () => {
+	assert.equal(alertText("MiMo-V2.6-Flash", { input: 0.14, output: 0.28 }), undefined);
+	assert.equal(alertText("LongCat 2.5 Preview Free", { input: 0, output: 0 }), undefined);
+	assert.equal(alertText("mystery", undefined), undefined);
 });
 
 test("extracts only tracked providers with numeric costs", () => {

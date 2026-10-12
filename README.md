@@ -16,6 +16,17 @@ MiMo-V2.6-Flash $0.14/$0.28    ← pale green
 LongCat 2.5 Preview Free free  ← dim green, safe to use
 ```
 
+When the current model is expensive (`severity ≥ 0.7`), it also raises a banner **directly above the editor** (`setWidget`), where you cannot miss it while typing:
+
+```
+⚠ Kimi K3  $3/$15
+╭──────────────────────────────╮
+│ Type your message…           │
+╰──────────────────────────────╯
+```
+
+The banner stays absent for cheap, free and unknown-priced models, so it remains a real signal instead of permanent decoration.
+
 - Ramp: `severity = clamp((log10(input + output) - log10(0.30)) / (log10(20) - log10(0.30)), 0, 1)`
 - Colour: pale green `#8ce99a` → yellow `#ffd43b` → red `#ff5555`; `≥ 0.7` is bold, `≥ 0.9` is bold with reversed colours.
 - Free (`0/0`) is always `severity = 0` and is **never** red.
@@ -56,7 +67,7 @@ node --test pricing.test.ts     # pure logic: severity / ramp / monotonicity / p
 node scripts/preview.ts         # fetch models.dev and list every opencode model with price + severity
 ```
 
-- `index.ts` — the pi extension glue: live price fetch, cache, `setStatus`.
+- `index.ts` — the pi extension glue: live price fetch, cache, `setStatus` + above-editor `setWidget` banner.
 - `pricing.ts` — pure functions: price → severity → ANSI colour (no pi, no I/O, directly unit-testable).
 - `pricing.test.ts` — unit tests.
 - `scripts/preview.ts` — live preview.

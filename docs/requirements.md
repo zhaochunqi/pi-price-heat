@@ -122,11 +122,22 @@ hi = 20.00    # “明显贵”的锚点，≈ Kimi K3（3+15=18）
 - 抓不到（离线 / 站点故障）就用旧缓存；完全没数据就回退 `ctx.model.cost`，再没有就中性灰。
 - 价格不硬编码在代码里；实时核对：`node scripts/preview.ts`。
 
+### 6.6 输入框上方横幅（setWidget）
+
+footer 状态行在长会话里容易被忽略（视线都在输入框）。所以**偏贵的模型**额外在**编辑器正上方**渲染一条横幅（`ctx.ui.setWidget(key, lines)`，默认 `placement: "aboveEditor"`）：
+
+- 触发条件：`severity >= ALERT_SEVERITY`（=0.7，即色阶转 bold 的同一分界）。
+- 内容：`⚠ {name}  {input}/{output}`，整行用该 severity 的颜色绘制；≥0.9 自动是反白（白字 + 红底）。
+- 便宜 / 免费 / 无价格 → `setWidget(key, undefined)` 清除横幅，不留空行。
+- 只随当前模型变化；`model_select` 与后台刷新完成时都重绘。
+- 阈值只调 `pricing.ts` 的 `ALERT_SEVERITY`；`alertText()` 是纯函数，可直接单测。
+
 ## 7. pi 扩展 API 约束（已实测）
 
 - **无法单独给 footer 里那个模型名换色**。只有两条路：
   - `ctx.ui.setStatus(key, text)` —— 在 footer 下加一行状态（本扩展采用）；
   - `ctx.ui.setFooter(...)` —— 整体替换 footer，需要自己重算 context 百分比、token 用量、成本。
+- `ctx.ui.setWidget(key, lines)` —— 在编辑器上方/下方加常驻内容（本扩展用于贵价横幅，默认 `placement: "aboveEditor"`；`undefined` 清除；`Text` 渲染保留 ANSI，宽度按 `visibleWidth` 计算；最多 10 行）。
 - 相关事件：`session_start`、`model_select`（`event.source` ∈ `set` / `cycle` / `restore`）。
 - `setStatus` 的文本会经过 sanitize（去掉 `\r\n\t` 并折叠空格），但 **ANSI 转义保留**，所以可以用颜色；pi-tui 的 `visibleWidth` 能正确计算含 ANSI 的宽度。
 - 仅在 `ctx.hasUI` 为真时调用（JSON/print 模式无 UI）。
@@ -141,10 +152,12 @@ hi = 20.00    # “明显贵”的锚点，≈ Kimi K3（3+15=18）
 - 无价格数据的模型 → 中性灰，不误判。
 - **单调性**：对任意两个模型，`price` 更高的 `severity` 不许更低。
 - 切换模型立即更新；启动/恢复会话时显示正确（有缓存则同步，首次跑完后台刷新再重绘）。
+- `severity ≥ 0.7` 的模型（如 `kimi-k3`）在输入框上方出现横幅；`< 0.7` / 免费 / 无价格时不出现横幅，也不留空行。
 
 ## 9. 开放问题
 
 - 要不要顺带显示“本会话已花 / 月度额度剩余”？（models.dev 不含月度额度，需另接 opencode.ai 官网）
 - 月度额度（$15/$60）要不要作为第二维信号（额度小的额外加深）？
 - 要不要提供 `/price-heat` 命令切换模式或临时静音？
+- 横幅阈值固定 0.7 是否合适，要不要可配置（或临时静音）？
 - 非 opencode provider 的兜底：也用 `ctx.model.cost` 上色阶，还是干脆不显示？（当前：有 `ctx.model.cost` 就上色阶）
