@@ -14,14 +14,16 @@ pi 的 footer 右侧把当前模型名显示为 **dim 灰色**，`/model`、Ctrl
 
 ## 2. 范围
 
-**v1 只覆盖 opencode 的模型：**
+**覆盖 `PROVIDER_MAP`（`pricing.ts`）里列出的 provider**——pi 的 provider id 到 models.dev 的 provider id 的映射：
 
-- `opencode-go` —— OpenCode Go 计划。
-- `opencode` —— OpenCode Zen。
+- `opencode-go` / `opencode` —— OpenCode Go / Zen（同名）。
+- `github-copilot`、`xiaomi-token-plan-*` —— 同名。
+- `kimi-coding` → `kimi-code-plan-cn`、`zai-coding-cn` → `zai-coding-plan` —— 需要映射。
+- `anthropic` / `openai` / `openrouter` —— 纯按量计费，语义无争议。
 
-两者价格都来自 models.dev（`https://models.dev/api.json`）；同一模型在两个 provider 价格不同（见 §4），必须按 provider 分开查表。
+同一模型在不同 provider 价格不同（见 §4），必须按 provider 分开查表。映射表里的订阅 plan 若**目录内无价格分化**，按 §6.7 走 `plan` 中性渲染，不上色阶。
 
-其它 provider（`kimi-coding`、`anthropic`、`openai` …）**不在 v1 范围**：用 `ctx.model.cost` 兜底，拿不到价格就中性显示，不判色、不误报。
+其它 provider（`openai-codex`、`qwen-token-plan-cn` 等未映射的）**不在范围**：用 `ctx.model.cost` 兜底，拿不到价格就中性显示，不判色、不误报。
 
 ## 3. 硬性要求
 
@@ -29,8 +31,9 @@ pi 的 footer 右侧把当前模型名显示为 **dim 灰色**，`/model`、Ctrl
 2. **免费（$0）必须是"放心"色**，绝不能是红。
 3. 价格来源必须可追溯：**models.dev** 的 provider 数据（`https://models.dev/api.json`），扩展运行时动态获取并落盘缓存；出处与机制见 §4、§6.5。
 4. pi 目录里的 `ctx.model.cost` 只能当**兜底**，不能当唯一真相（已知与真实报价有偏差，见 §4）。
-5. **范围只限 opencode**：`opencode-go` / `opencode` 查 models.dev 价格表；其它 provider 用 `ctx.model.cost` 兜底，拿不到价格就中性显示，**不许乱判红/绿**。
-6. **颜色随价格单调**：价格更高时，颜色不许比价格更低的更浅/更冷。
+5. **热力信号只在"有得选"时有意义。** 订阅 plan 内价格无分化（目录只有一个价位，如 kimi-coding 只有 K3 可用）→ 不上色阶、不出横幅，渲染为中性 `plan` 标记（§6.7）；价格有分化（opencode-go 里 Muse Spark 与 K3 并存）→ 正常上色阶。
+6. **范围限 `PROVIDER_MAP`**（§2）：映射内的 provider 查 models.dev 价格表；其它 provider 用 `ctx.model.cost` 兜底，拿不到价格就中性显示，**不许乱判红/绿**。
+7. **颜色随价格单调**：价格更高时，颜色不许比价格更低的更浅/更冷。
 
 ## 4. 价格来源（models.dev）
 
@@ -40,7 +43,7 @@ pi 的 footer 右侧把当前模型名显示为 **dim 灰色**，`/model`、Ctrl
 - **Go 与 Zen 同一模型可能不同价**：DeepSeek V4.1 Flash 在 Go 是 off-peak `$0.15/$0.60`，在 Zen 是 peak `$0.30/$1.20`。必须按 provider 分开查表，不能合并。
 - models.dev 里的 `*-free` 模型 cost 为 `0/0`，与其它模型一视同仁地按价格计算即可。
 
-结论：**以 models.dev 为唯一真相**（按 `provider + model id` 查表），`ctx.model.cost` 仅作非 opencode provider 的兜底。
+结论：**以 models.dev 为唯一真相**（按 `provider + model id` 查表），`ctx.model.cost` 仅作未映射 provider 的兜底。
 
 ## 5. 订阅制的特殊性（opencode-go）
 
@@ -55,7 +58,9 @@ opencode-go 不是纯按量付费，而是订阅：
 1. **token 单价**（$ / 1M tokens）——使用者的直觉；
 2. **额度大小**——额度越小越容易撞墙（如 Kimi K3 只有 $15/月）。
 
-v1 以**单价**分级；额度作为附加信息，待定（见 §9）。
+但单价作为信号有个前提：**使用者在同一个 plan 内有得选**。opencode-go 里 Muse Spark 与 K3 并存，选谁直接决定额度烧多快，单价分化是真实信号；kimi-coding 里只能用 K3（models.dev 上 `kimi-code-plan-*` 目录全是 0/0），价格不是决策变量，染红只会变成每天都在的假警报。
+
+因此 v1.1 起改为按目录分化程度分流（§6.7）：**有价格分化 → 单价色阶；无价格分化 → 中性 `plan` 标记**。额度作为附加信息，待定（见 §9）。
 
 ## 6. 着色规则：价格 → 连续色阶
 
@@ -114,7 +119,7 @@ hi = 20.00    # “明显贵”的锚点，≈ Kimi K3（3+15=18）
 
 ### 6.5 取价与缓存（动态）
 
-扩展在 `session_start` 时**动态获取** `https://models.dev/api.json`，切出两个 provider，得到 `provider → model id → {input, output, cacheRead, name}`。
+扩展在 `session_start` 时**动态获取** `https://models.dev/api.json`，切出 `PROVIDER_MAP` 涉及的 provider，得到 `provider → model id → {input, output, cacheRead, name}`。
 
 - 落盘缓存：`$XDG_CACHE_HOME/pi-price-heat/models-dev.json`（macOS 无 XDG 时为 `~/Library/Caches/pi-price-heat/models-dev.json`），带 `fetchedAt` 与 `etag`。
 - 缓存 12h 内直接用；过期后用 `If-None-Match` 条件请求（304 不重下）。
@@ -131,6 +136,15 @@ footer 状态行在长会话里容易被忽略（视线都在输入框）。所�
 - 便宜 / 免费 / 无价格 → `setWidget(key, undefined)` 清除横幅，不留空行。
 - 只随当前模型变化；`model_select` 与后台刷新完成时都重绘。
 - 阈值只调 `pricing.ts` 的 `ALERT_SEVERITY`；`alertText()` 是纯函数，可直接单测。
+
+### 6.7 无价格分化的订阅 plan（flat plan）
+
+判定是纯数据驱动，不硬编码订阅名单：映射 provider 的目录里，**付费价位（`input+output > 0`）去重后 ≤ 1 个** → 该 provider 判为 flat plan（`catalogIsFlat()`）。
+
+- 渲染：dim 蓝 `#74c0fc`，`{name} plan`；不上色阶、不出横幅、不算 severity。
+- 全 0/0（kimi-code-plan、zai-coding-plan、xiaomi-token-plan）和"只有一个付费价位"（zhipuai-coding-plan）都落在这一类。
+- 数据源以后补了分化价格，分类自动改变，代码不用动。
+- 边缘情况：flat plan provider 在离线且无缓存时拿不到目录，会回退 `ctx.model.cost`（如 kimi-coding 内置刊例价 3/15）而短暂上色——可接受的降级，缓存命中后即恢复。
 
 ## 7. pi 扩展 API 约束（已实测）
 
@@ -150,14 +164,15 @@ footer 状态行在长会话里容易被忽略（视线都在输入框）。所�
 - `kimi-k3`（3.00/15.00）→ `severity ≈ 0.97`，反白红。
 - `deepseek-v4.1-flash`：Go（0.15/0.60）→ `severity ≈ 0.22`，浅黄绿；Zen（0.30/1.20）→ `≈ 0.38`。
 - 无价格数据的模型 → 中性灰，不误判。
+- flat plan provider（如 `kimi-coding`，目录全 0/0）→ dim 蓝 `plan` 标记，**不是红、不出横幅**；`catalogIsFlat`：全 0/0 → true，单一付费价位 → true，多价位 → false。
 - **单调性**：对任意两个模型，`price` 更高的 `severity` 不许更低。
 - 切换模型立即更新；启动/恢复会话时显示正确（有缓存则同步，首次跑完后台刷新再重绘）。
-- `severity ≥ 0.7` 的模型（如 `kimi-k3`）在输入框上方出现横幅；`< 0.7` / 免费 / 无价格时不出现横幅，也不留空行。
+- `severity ≥ 0.7` 的模型（如 opencode-go 的 `kimi-k3`）在输入框上方出现横幅；`< 0.7` / 免费 / flat plan / 无价格时不出现横幅，也不留空行。
 
 ## 9. 开放问题
 
-- 要不要顺带显示“本会话已花 / 月度额度剩余”？（models.dev 不含月度额度，需另接 opencode.ai 官网）
+- 要不要顺带显示“本会话已花 / 月度额度剩余”？（models.dev 不含月度额度，需另接各家官方 API——这是与“价格热力”不同的数据平面，适合作为独立 v2 产品先做一家 pilot，如 GitHub Copilot 的 quota endpoint）
 - 月度额度（$15/$60）要不要作为第二维信号（额度小的额外加深）？
 - 要不要提供 `/price-heat` 命令切换模式或临时静音？
 - 横幅阈值固定 0.7 是否合适，要不要可配置（或临时静音）？
-- 非 opencode provider 的兜底：也用 `ctx.model.cost` 上色阶，还是干脆不显示？（当前：有 `ctx.model.cost` 就上色阶）
+- 未映射 provider 的扩展：`openai-codex` 在 models.dev 无源（只能 `ctx.model.cost` 兜底）；`qwen-token-plan-cn` 与 models.dev 的 `alibaba-token-plan-cn` / `alibaba-coding-plan*` 对应关系有待核实（model id 需逐个比对）。

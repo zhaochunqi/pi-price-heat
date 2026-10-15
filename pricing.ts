@@ -17,8 +17,29 @@ export interface PriceEntry {
 	name?: string;
 }
 
-/** provider -> model id -> price. */
+/** provider -> model id -> price. Keys are models.dev provider ids. */
 export type PriceTable = Record<string, Record<string, PriceEntry>>;
+
+/**
+ * pi provider id -> models.dev provider id. Providers not listed here fall
+ * back to `ctx.model.cost`. Membership doubles as the scope guardrail for
+ * `catalogIsFlat`: only these catalogues are ever classified as flat plans.
+ */
+export const PROVIDER_MAP: Record<string, string> = {
+	"opencode-go": "opencode-go",
+	opencode: "opencode",
+	// models.dev also has kimi-code-plan-global (kimi.ai); the catalogues are
+	// identical today (all 0/0), so either would classify the same.
+	"kimi-coding": "kimi-code-plan-cn",
+	"github-copilot": "github-copilot",
+	"zai-coding-cn": "zai-coding-plan",
+	"xiaomi-token-plan-cn": "xiaomi-token-plan-cn",
+	"xiaomi-token-plan-ams": "xiaomi-token-plan-ams",
+	"xiaomi-token-plan-sgp": "xiaomi-token-plan-sgp",
+	anthropic: "anthropic",
+	openai: "openai",
+	openrouter: "openrouter",
+};
 
 /** Log-scale floor: the cheapest paid model in opencode (Muse Spark, 0.10+0.20). */
 export const LO_PRICE = 0.3;
@@ -34,11 +55,42 @@ const GREEN: Rgb = [0x8c, 0xe9, 0x9a];
 const YELLOW: Rgb = [0xff, 0xd4, 0x3b];
 const RED: Rgb = [0xff, 0x55, 0x55];
 const NEUTRAL: Rgb = [0xc8, 0xc8, 0xc8];
+const PLAN: Rgb = [0x74, 0xc0, 0xfc];
 
 /** Blended scalar price: input + output, $/1M tokens. */
 export function priceOf(entry: { input: number; output: number }): number {
 	return entry.input + entry.output;
 }
+
+/**
+ * A provider catalogue has no price differentiation when it offers at most
+ * one positive price point (all-free, or every paid model priced the same).
+ * Heat is only meaningful where the user has a real choice; a flat catalogue
+ * means "subscription with nothing to choose", which renders as `plan`
+ * instead of the ramp. If the source later adds differentiated prices, the
+ * classification changes on its own.
+ */
+export function catalogIsFlat(models: Record<string, PriceEntry> | undefined): boolean {
+	if (!models) return false;
+	const prices = new Set(
+		Object.values(models)
+			.map((entry) => priceOf(entry))
+			.filter((price) => price > 0),
+	);
+	return prices.size <= 1;
+}
+
+/**
+ * How a model's price resolved:
+ * - `priced` — a real per-token price, coloured on the heat ramp;
+ * - `plan` — a flat-price subscription catalogue: no actionable choice, so
+ *   no heat, no banner, just a quiet marker;
+ * - `unknown` — no price data, neutral grey, never judged.
+ */
+export type ResolvedPrice =
+	| { kind: "priced"; entry: PriceEntry }
+	| { kind: "plan" }
+	| { kind: "unknown" };
 
 /**
  * Map a scalar price to a 0..1 severity with a log scale.
@@ -95,13 +147,19 @@ export function formatPriceLabel(entry: PriceEntry): string {
 }
 
 /**
- * The footer status line: the model name painted by price plus a dim price tag.
- * Unknown price keeps the name only, in neutral grey.
+ * The footer status line: the model name painted by price plus a dim price
+ * tag. Flat-plan models get a quiet dim-blue `plan` marker — the price is not
+ * a decision the user can act on, so heat would be a false alarm. Unknown
+ * price keeps the name only, in neutral grey.
  */
-export function statusText(name: string, entry: PriceEntry | undefined): string {
-	if (!entry) return paint(name, undefined);
-	const severity = severityOf(priceOf(entry));
-	return `${paint(name, severity)} ${DIM}${formatPriceLabel(entry)}${RESET}`;
+export function statusText(name: string, resolved: ResolvedPrice): string {
+	if (resolved.kind === "plan") {
+		const [r, g, b] = PLAN;
+		return `${DIM}\x1b[38;2;${r};${g};${b}m${name} plan${RESET}`;
+	}
+	if (resolved.kind === "unknown") return paint(name, undefined);
+	const severity = severityOf(priceOf(resolved.entry));
+	return `${paint(name, severity)} ${DIM}${formatPriceLabel(resolved.entry)}${RESET}`;
 }
 
 /**
@@ -113,14 +171,15 @@ export const ALERT_SEVERITY = 0.7;
 
 /**
  * The above-editor banner line, shown only for models expensive enough to warn
- * about. Cheap, free and unknown-priced models return undefined: the banner
- * must stay quiet so it never turns into decoration you learn to ignore.
+ * about. Cheap, free, flat-plan and unknown-priced models return undefined:
+ * the banner must stay quiet so it never turns into decoration you learn to
+ * ignore.
  */
-export function alertText(name: string, entry: PriceEntry | undefined): string | undefined {
-	if (!entry) return undefined;
-	const severity = severityOf(priceOf(entry));
+export function alertText(name: string, resolved: ResolvedPrice): string | undefined {
+	if (resolved.kind !== "priced") return undefined;
+	const severity = severityOf(priceOf(resolved.entry));
 	if (severity < ALERT_SEVERITY) return undefined;
-	return paint(`⚠ ${name}  ${formatPriceLabel(entry)}`, severity);
+	return paint(`⚠ ${name}  ${formatPriceLabel(resolved.entry)}`, severity);
 }
 
 /**

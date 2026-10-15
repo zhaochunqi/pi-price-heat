@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	alertText,
+	catalogIsFlat,
 	colorOf,
 	extractProviderPrices,
 	formatPriceLabel,
@@ -10,6 +11,9 @@ import {
 	severityOf,
 	statusText,
 } from "./pricing.ts";
+
+const priced = (input: number, output: number) =>
+	({ kind: "priced", entry: { input, output } }) as const;
 
 const close = (actual: number, expected: number) =>
 	assert.ok(Math.abs(actual - expected) < 0.005, `${actual} !~= ${expected}`);
@@ -61,28 +65,56 @@ test("price labels", () => {
 });
 
 test("status text keeps the name and a dim price tag", () => {
-	const text = statusText("Kimi K3", { input: 3, output: 15 });
+	const text = statusText("Kimi K3", priced(3, 15));
 	assert.ok(text.includes("Kimi K3"));
 	assert.ok(text.includes("$3/$15"));
-	const unknown = statusText("mystery", undefined);
+	const unknown = statusText("mystery", { kind: "unknown" });
 	assert.ok(unknown.includes("mystery"));
 	assert.ok(unknown.includes("\x1b[2m"));
 });
 
+test("flat subscription plans render as a quiet plan marker, never heat", () => {
+	const text = statusText("Kimi K3", { kind: "plan" });
+	assert.ok(text.includes("Kimi K3"));
+	assert.ok(text.includes("plan"));
+	assert.ok(text.includes("\x1b[2m"), "plan should be dim");
+	assert.ok(text.includes("38;2;116;192;252"), "plan should be blue");
+	assert.ok(!text.includes("48;2;"), "plan must never paint a background");
+	assert.ok(!text.includes("38;2;255;85;85"), "plan must never be red");
+});
+
+test("catalogues with at most one price point are flat plans", () => {
+	assert.equal(catalogIsFlat(undefined), false);
+	assert.equal(catalogIsFlat({}), true);
+	assert.equal(
+		catalogIsFlat({ k3: { input: 0, output: 0 }, "k3-256k": { input: 0, output: 0 } }),
+		true,
+	);
+	assert.equal(
+		catalogIsFlat({ "glm-4.6v": { input: 0.3, output: 0.9 }, free: { input: 0, output: 0 } }),
+		true,
+	);
+	assert.equal(
+		catalogIsFlat({ cheap: { input: 0.1, output: 0.2 }, dear: { input: 3, output: 15 } }),
+		false,
+	);
+});
+
 test("alert banner flags only genuinely expensive models", () => {
-	const kimi = alertText("Kimi K3", { input: 3, output: 15 });
+	const kimi = alertText("Kimi K3", priced(3, 15));
 	assert.ok(kimi?.includes("Kimi K3"));
 	assert.ok(kimi?.includes("$3/$15"));
 	assert.ok(kimi?.includes("48;2;"), ">=0.9 should reverse-video the banner");
 
-	const glm = alertText("GLM 5.3", { input: 1.4, output: 4.4 });
+	const glm = alertText("GLM 5.3", priced(1.4, 4.4));
 	assert.ok(glm?.includes("\x1b[1m"), "0.71 should at least be bold");
 });
 
-test("alert banner stays quiet for cheap, free and unknown prices", () => {
-	assert.equal(alertText("MiMo-V2.6-Flash", { input: 0.14, output: 0.28 }), undefined);
-	assert.equal(alertText("LongCat 2.5 Preview Free", { input: 0, output: 0 }), undefined);
-	assert.equal(alertText("mystery", undefined), undefined);
+test("alert banner stays quiet for cheap, free, plan and unknown prices", () => {
+	assert.equal(alertText("MiMo-V2.6-Flash", priced(0.14, 0.28)), undefined);
+	assert.equal(alertText("LongCat 2.5 Preview Free", priced(0, 0)), undefined);
+	assert.equal(alertText("Kimi K3", { kind: "plan" }), undefined);
+	assert.equal(alertText("mystery", { kind: "unknown" }), undefined);
 });
 
 test("extracts only tracked providers with numeric costs", () => {

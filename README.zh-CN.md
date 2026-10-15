@@ -31,12 +31,13 @@ LongCat 2.5 Preview Free free  ← dim 绿，放心
 - 颜色：浅绿 `#8ce99a` → 黄 `#ffd43b` → 红 `#ff5555`；≥0.7 加粗，≥0.9 反白。
 - 免费（0/0）恒为 `severity = 0`，**永不判红**。
 - 无价格 → 中性灰，不判色。
+- 无价格分化的订阅 plan（kimi-coding、zai、xiaomi token plan 等目录内只有一个价位的）→ 安静的 dim 蓝 `plan` 标记：没有可选择的空间，价格就不是信号，**不上色阶、不出横幅**。
 
-范围：**v1 只覆盖 opencode 的模型**（`opencode-go` / `opencode`）；其它 provider 走 `ctx.model.cost` 兜底。
+范围：`PROVIDER_MAP`（`pricing.ts`）里的 provider 走 models.dev 查价——`opencode-go` / `opencode`、`github-copilot`、`kimi-coding`、`zai-coding-cn`、`xiaomi-token-plan-*`，以及按量计费的 `anthropic` / `openai` / `openrouter`；其它 provider 走 `ctx.model.cost` 兜底。
 
 ## 价格来源
 
-**models.dev**，运行时动态获取（`https://models.dev/api.json`），只切 `opencode-go` / `opencode` 两个 provider：
+**models.dev**，运行时动态获取（`https://models.dev/api.json`），切出映射的 provider（见 `pricing.ts` 的 `PROVIDER_MAP`，pi 的 provider id 会翻译成 models.dev 的 id，如 `kimi-coding` → `kimi-code-plan-cn`）：
 
 - 落盘缓存 `$XDG_CACHE_HOME/pi-price-heat/models-dev.json`（macOS 无 XDG 时 `~/Library/Caches/...`），12h 内直接用；过期后用 `If-None-Match` 条件刷新。
 - 离线/站点故障用旧缓存；完全没有则回退 `ctx.model.cost`，再没有就中性灰。
@@ -64,7 +65,7 @@ pi -e git:github.com/zhaochunqi/pi-price-heat
 
 ```bash
 node --test pricing.test.ts     # 纯逻辑单测（severity / 色阶 / 单调性 / 解析）
-node scripts/preview.ts         # 拉 models.dev，列出所有 opencode 模型的价格与 severity
+node scripts/preview.ts         # 拉 models.dev，列出所有映射 provider 的模型价格与 severity
 ```
 
 - `index.ts` —— pi 扩展胶水：动态取价、缓存、`setStatus`。

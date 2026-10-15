@@ -7,10 +7,13 @@
  * raises a banner above the editor whenever the current model is expensive
  * enough to be worth a second look.
  *
- * Prices are fetched dynamically from models.dev (https://models.dev), sliced
- * down to the tracked opencode providers, cached on disk and refreshed in the
- * background. Other providers fall back to `ctx.model.cost`; models with no
- * price at all get a neutral grey name and are never judged.
+ * Prices are fetched dynamically from models.dev (https://models.dev) for the
+ * providers in PROVIDER_MAP, cached on disk and refreshed in the background.
+ * A mapped provider whose catalogue has no price differentiation (flat
+ * subscription plans like kimi-coding) renders as a neutral "plan" marker
+ * instead of the heat ramp — there is no price choice to warn about. Unmapped
+ * providers fall back to `ctx.model.cost`; models with no price at all get a
+ * neutral grey name and are never judged.
  *
  * See docs/requirements.md for the full spec.
  */
@@ -21,16 +24,18 @@ import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	alertText,
+	catalogIsFlat,
 	extractProviderPrices,
-	type PriceEntry,
+	PROVIDER_MAP,
 	type PriceTable,
+	type ResolvedPrice,
 	statusText,
 } from "./pricing.ts";
 
 const STATUS_KEY = "pi-price-heat";
 const API_URL = "https://models.dev/api.json";
-/** v1 scope: only opencode. Other providers use ctx.model.cost. */
-const TRACKED_PROVIDERS = ["opencode-go", "opencode"] as const;
+/** models.dev providers we fetch: the values of the pi -> models.dev map. */
+const TRACKED_PROVIDERS = [...new Set(Object.values(PROVIDER_MAP))];
 /** How long a cached table is trusted before we revalidate with models.dev. */
 const REFRESH_TTL_MS = 12 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 20_000;
@@ -75,7 +80,9 @@ function saveCache(cache: CacheFile): void {
 function isFresh(cache: CacheFile | undefined): boolean {
 	if (!cache?.fetchedAt) return false;
 	const fetchedAt = Date.parse(cache.fetchedAt);
-	return Number.isFinite(fetchedAt) && Date.now() - fetchedAt < REFRESH_TTL_MS;
+	if (!Number.isFinite(fetchedAt) || Date.now() - fetchedAt >= REFRESH_TTL_MS) return false;
+	// A cache from before a provider was added to PROVIDER_MAP is stale.
+	return TRACKED_PROVIDERS.every((provider) => cache.providers[provider]);
 }
 
 async function fetchPrices(previous: CacheFile | undefined): Promise<CacheFile | undefined> {
@@ -102,20 +109,30 @@ async function fetchPrices(previous: CacheFile | undefined): Promise<CacheFile |
 	};
 }
 
-/** Prefer the models.dev table for opencode; otherwise fall back to ctx.model.cost. */
-function resolve(model: AnyModel | undefined, table: PriceTable | undefined): PriceEntry | undefined {
+/**
+ * Prefer the models.dev table for mapped providers. A flat catalogue (no
+ * price differentiation, e.g. all-zero subscription plans) means the user has
+ * no price choice to act on: report `plan` instead of judging by list price.
+ * Unmapped providers and catalogue misses fall back to ctx.model.cost.
+ */
+function resolve(model: AnyModel | undefined, table: PriceTable | undefined): ResolvedPrice {
 	const provider = model?.provider;
-	const id = model?.id;
-	if (typeof provider === "string" && (TRACKED_PROVIDERS as readonly string[]).includes(provider)) {
-		const entry = id ? table?.[provider]?.[id] : undefined;
-		if (entry) return entry;
+	const mapped = typeof provider === "string" ? PROVIDER_MAP[provider] : undefined;
+	const catalog = mapped ? table?.[mapped] : undefined;
+	if (catalog && Object.keys(catalog).length > 0) {
+		if (catalogIsFlat(catalog)) return { kind: "plan" };
+		const entry = model?.id ? catalog[model.id] : undefined;
+		if (entry) return { kind: "priced", entry };
 	}
 
 	const cost = model?.cost;
 	if (cost && (cost.input > 0 || cost.output > 0)) {
-		return { input: cost.input, output: cost.output, cacheRead: cost.cacheRead };
+		return {
+			kind: "priced",
+			entry: { input: cost.input, output: cost.output, cacheRead: cost.cacheRead },
+		};
 	}
-	return undefined;
+	return { kind: "unknown" };
 }
 
 export default function priceHeat(pi: ExtensionAPI): void {
@@ -132,12 +149,17 @@ export default function priceHeat(pi: ExtensionAPI): void {
 			ctx.ui.setWidget(STATUS_KEY, undefined);
 			return;
 		}
-		const entry = resolve(model, table);
-		const name = entry?.name ?? model.name ?? model.id ?? "model";
-		ctx.ui.setStatus(STATUS_KEY, statusText(name, entry));
+		const resolved = resolve(model, table);
+		const name =
+			(resolved.kind === "priced" ? resolved.entry.name : undefined) ??
+			model.name ??
+			model.id ??
+			"model";
+		ctx.ui.setStatus(STATUS_KEY, statusText(name, resolved));
 		// The footer is easy to miss; an expensive model gets a banner right above
-		// the editor. Cheap/free/unknown models clear it so it stays meaningful.
-		const alert = alertText(name, entry);
+		// the editor. Cheap/free/flat-plan/unknown models clear it so it stays
+		// meaningful.
+		const alert = alertText(name, resolved);
 		ctx.ui.setWidget(STATUS_KEY, alert ? [alert] : undefined);
 	}
 
